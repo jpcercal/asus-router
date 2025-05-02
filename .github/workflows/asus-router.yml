@@ -1,0 +1,228 @@
+name: asus-router
+
+on: [push]
+
+env:
+  IMAGE_NAME: 'jpcercal/asus-router'
+  RUST_LOG: 'debug'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            dockerfile:
+              - 'Dockerfile'
+
+      - if: steps.filter.outputs.dockerfile == 'true'
+        uses: docker/setup-docker-action@v4
+        with:
+          daemon-config: |
+            {
+              "debug": true,
+              "features": {
+                  "containerd-snapshotter": true
+              }
+            }
+
+      - if: steps.filter.outputs.dockerfile == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - if: steps.filter.outputs.dockerfile == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - if: steps.filter.outputs.dockerfile == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # set latest tag for default branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - if: steps.filter.outputs.dockerfile == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          sbom: true
+          push: true
+          context: .
+          platforms: linux/amd64,linux/arm64
+          annotations: ${{ steps.meta.outputs.annotations }}
+          tags: ${{ steps.meta.outputs.tags }}
+
+  build:
+    name: build
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - run: |
+          docker run --rm \
+            -v $(pwd):/app \
+            -v ~/.cargo/registry:/usr/local/cargo/registry \
+            -v ~/.cargo/git/db:/usr/local/cargo/git/db \
+            ${{ env.IMAGE_NAME }}
+
+      - run: |
+          mv target/aarch64-unknown-linux-musl/release/asus-router asus-router
+
+      - run: |
+          tar -czvf asus-router.aarch64.tar.gz -C . asus-router
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asus-router.aarch64.tar.gz
+          path: asus-router.aarch64.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  test-artifact:
+    name: test-artifact
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: asus-router.aarch64.tar.gz
+
+      - run: |
+          tar -xzf asus-router.aarch64.tar.gz
+
+      - run: |
+          echo "$(pwd)" >> "$GITHUB_PATH"
+
+      - run: |
+          asus-router
+
+      - run: |
+          asus-router discover-youtube-subnets
+
+  test-release:
+    name: test-release
+    needs: create-release
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/jpcercal/asus-router/HEAD/install.sh)"
+
+      - run: |
+          echo "/tmp/opt/bin" >> "$GITHUB_PATH"
+
+      - run: |
+          asus-router
+
+      - run: |
+           asus-router discover-youtube-subnets
+
+  create-release:
+    name: create-release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: asus-router.aarch64.tar.gz
+
+      - run: |
+          tar -xzf asus-router.aarch64.tar.gz
+          MD5_CHECKSUM=`md5sum asus-router | awk '{print $1}'`
+          echo "$MD5_CHECKSUM" > asus-router.md5sum.txt
+          echo "md5sum of the compiled binary file \"asus-router\"...: $MD5_CHECKSUM"
+          MD5_CHECKSUM=`md5sum asus-router.aarch64.tar.gz | awk '{print $1}'`
+          echo "$MD5_CHECKSUM" > asus-router.aarch64.tar.gz.md5sum.txt
+          echo "md5sum of the file \"asus-router.aarch64.tar.gz\"....: $MD5_CHECKSUM"
+
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs').promises;
+
+            const padding = (v) => v < 10 ? `0${v}` : v;
+
+            const date = new Date();
+            const year = padding(date.getFullYear());
+            const month = padding(date.getMonth());
+            const day = padding(date.getDate());
+            const hours = padding(date.getHours());
+            const minutes = padding(date.getMinutes());
+            const seconds = padding(date.getSeconds());
+
+            const major = year - 2024;
+            const minor = month;
+            const patch = `${day}${hours}${minutes}${seconds}`;
+
+            const releaseName = `${major}.${minor}.${patch}`;
+
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${releaseName}`,
+              sha: context.sha
+            });
+
+            const createReleaseResponse = await github.rest.repos.createRelease({
+              draft: false,
+              generate_release_notes: true,
+              name: releaseName,
+              owner: context.repo.owner,
+              prerelease: false,
+              repo: context.repo.repo,
+              tag_name: releaseName,
+            });
+
+            await github.rest.repos.uploadReleaseAsset({
+              name: 'asus-router.aarch64.tar.gz',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: createReleaseResponse.data.id,
+              data: await fs.readFile('./asus-router.aarch64.tar.gz')
+            });
+
+            await github.rest.repos.uploadReleaseAsset({
+              name: 'asus-router.md5sum.txt',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: createReleaseResponse.data.id,
+              data: await fs.readFile('./asus-router.md5sum.txt')
+            });
+
+            await github.rest.repos.uploadReleaseAsset({
+              name: 'asus-router.aarch64.tar.gz.md5sum.txt',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: createReleaseResponse.data.id,
+              data: await fs.readFile('./asus-router.aarch64.tar.gz.md5sum.txt')
+            });
+
+            return releaseName;
