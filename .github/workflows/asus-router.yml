@@ -93,6 +93,9 @@ jobs:
             ${{ env.IMAGE_NAME }}
 
       - run: |
+          ls -lha target/
+          ls -lha target/aarch64-unknown-linux-musl/
+          ls -lha target/aarch64-unknown-linux-musl/release/
           mv target/aarch64-unknown-linux-musl/release/asus-router asus-router
 
       - run: |
