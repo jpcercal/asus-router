@@ -97,6 +97,9 @@ jobs:
           ls -lha target/aarch64-unknown-linux-musl/
           ls -lha target/aarch64-unknown-linux-musl/release/
           ls -lha target/release/
+          ls -lha target/release/build/
+          ls -lha target/release/incremental
+          ./target/aarch64-unknown-linux-musl/release/asus-router
 #          mv target/aarch64-unknown-linux-musl/release/asus-router asus-router
 
 #      - run: |
