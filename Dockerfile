@@ -1,4 +1,4 @@
-FROM rust:alpine3.21 AS build-tools
+FROM rust:alpine3.21
 
 # Install required packages for downloading and building OpenSSL.
 RUN apk update && \
@@ -35,27 +35,12 @@ RUN wget https://www.openssl.org/source/openssl-1.1.1l.tar.gz && \
     cd .. && \
     rm -rf openssl-1.1.1l openssl-1.1.1l.tar.gz
 
-FROM rust:alpine3.21
-
-# Copy in only the artefacts we need from the previous stage
-COPY --from=build-tools /usr/local/aarch64-linux-musl-cross /usr/local/aarch64-linux-musl-cross
-COPY --from=build-tools /usr/local/openssl-aarch64          /usr/local/openssl-aarch64
-# The extra target lives inside ~/.rustup in the builder; copy just it.
-COPY --from=build-tools /usr/local/rustup                   /usr/local/rustup
-COPY --from=build-tools /usr/local/cargo                    /usr/local/cargo
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo
-
-# Add cross-compiler to PATH
-ENV PATH="/usr/local/aarch64-linux-musl-cross/bin:${PATH}"
-
-# Tell Cargo & build-scripts where OpenSSL lives
+# Tell Cargo (and build scripts) where to find OpenSSL.
 ENV OPENSSL_DIR=/usr/local/openssl-aarch64 \
     OPENSSL_LIB_DIR=/usr/local/openssl-aarch64/lib \
     OPENSSL_INCLUDE_DIR=/usr/local/openssl-aarch64/include \
     PKG_CONFIG_ALLOW_CROSS=1
 
-# Your project lives here
 WORKDIR /app
 
 # Use the aarch64 musl cross linker when building.
