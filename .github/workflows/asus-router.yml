@@ -96,18 +96,19 @@ jobs:
           ls -lha target/
           ls -lha target/aarch64-unknown-linux-musl/
           ls -lha target/aarch64-unknown-linux-musl/release/
-          mv target/aarch64-unknown-linux-musl/release/asus-router asus-router
+          ls -lha target/release/
+#          mv target/aarch64-unknown-linux-musl/release/asus-router asus-router
 
-      - run: |
-          tar -czvf asus-router.aarch64.tar.gz -C . asus-router
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asus-router.aarch64.tar.gz
-          path: asus-router.aarch64.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 1
+#      - run: |
+#          tar -czvf asus-router.aarch64.tar.gz -C . asus-router
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: asus-router.aarch64.tar.gz
+#          path: asus-router.aarch64.tar.gz
+#          compression-level: 0
+#          if-no-files-found: error
+#          retention-days: 1
 
   test-artifact:
     name: test-artifact
